@@ -22,7 +22,6 @@ const PAIRS = [
   "sui_usdt", "link_usdt"
 ];
 
-// Dictionnaire des IDs et noms des actifs
 const PAIR_METADATA = {
   "aapl_usd": { id: 6004, name: "APPLE INC." },
   "amzn_usd": { id: 6005, name: "AMAZON" },
@@ -58,7 +57,7 @@ const PAIR_METADATA = {
   "link_usdt": { id: 2, name: "CHAINLINK" }
 };
 
-// Serveur WebSocket avec compression activée
+// WebSocket server avec compression
 const wss = new WebSocketServer({
   port: PORT,
   perMessageDeflate: {
@@ -70,9 +69,9 @@ const wss = new WebSocketServer({
   }
 });
 
-console.log(`✅ Serveur WebSocket lancé sur le port ${PORT} avec compression`);
+console.log(`✅ Serveur WebSocket lancé sur le port ${PORT} avec compression et anti-inactivité.`);
 
-// Fonction pour récupérer tous les prix et diffuser
+// Fonction pour récupérer et diffuser tous les prix
 async function fetchAllPricesAndBroadcast() {
   try {
     const responses = await Promise.all(PAIRS.map(pair =>
@@ -97,16 +96,32 @@ async function fetchAllPricesAndBroadcast() {
         client.send(payload);
       }
     });
-
   } catch (err) {
     console.error("❌ Erreur récupération prix:", err.message);
   }
 }
 
-// Rafraîchissement toutes les secondes
-setInterval(fetchAllPricesAndBroadcast, 1000);
+// Rafraîchissement toutes les 1,5 secondes
+setInterval(fetchAllPricesAndBroadcast, 1500);
 
-// Connexion client WebSocket
+// Suivi d’inactivité pour chaque client
 wss.on('connection', ws => {
   console.log("🟢 Nouveau client connecté");
+
+  let activityTimeout = setTimeout(() => {
+    ws.terminate();
+    console.log("🔴 Client déconnecté après 5 minutes d'inactivité");
+  }, 5 * 60 * 1000); // 5 minutes
+
+  ws.on('message', () => {
+    clearTimeout(activityTimeout);
+    activityTimeout = setTimeout(() => {
+      ws.terminate();
+      console.log("🔴 Client déconnecté après 5 minutes d'inactivité");
+    }, 5 * 60 * 1000);
+  });
+
+  ws.on('close', () => {
+    clearTimeout(activityTimeout);
+  });
 });

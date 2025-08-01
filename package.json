@@ -1,14 +1,14 @@
 {
-  "name": "link-price-streamer",
+  "name": "wss1-link-only",
   "version": "1.0.0",
-  "description": "API Node.js pour streamer le prix de LINK/USDT depuis Supra",
+  "description": "WebSocket server streaming LINK/USDT only",
   "main": "index.js",
   "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "ws": "^8.15.1"
   }
 }

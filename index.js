@@ -1,127 +1,62 @@
-import dotenv from 'dotenv';
-dotenv.config();
+require('dotenv').config();
+const WebSocket = require('ws');
+const fetch = require('node-fetch');
+const https = require('https');
 
-import fetch from 'node-fetch';
-import { WebSocketServer } from 'ws';
-
-// Configuration
-const PORT = process.env.PORT || 8080;
-const API_KEY = process.env.API_KEY;
-const BASE_URL = "https://prod-kline-rest.supra.com";
-
-// Liste des paires à surveiller
-const PAIRS = [
-  "aapl_usd", "amzn_usd", "coin_usd", "goog_usd", "gme_usd",
-  "intc_usd", "ko_usd", "mcd_usd", "msft_usd", "ibm_usd",
-  "meta_usd", "nvda_usd", "tsla_usd",
-  "aud_usd", "eur_usd", "gbp_usd", "nzd_usd",
-  "usd_cad", "usd_chf", "usd_jpy",
-  "xag_usd", "xau_usd",
-  "btc_usdt", "eth_usdt", "sol_usdt", "xrp_usdt",
-  "avax_usdt", "doge_usdt", "trx_usdt", "ada_usdt",
-  "sui_usdt", "link_usdt"
-];
-
-const PAIR_METADATA = {
-  "aapl_usd": { id: 6004, name: "APPLE INC." },
-  "amzn_usd": { id: 6005, name: "AMAZON" },
-  "coin_usd": { id: 6010, name: "COINBASE" },
-  "goog_usd": { id: 6003, name: "ALPHABET INC." },
-  "gme_usd": { id: 6011, name: "GAMESTOP CORP." },
-  "intc_usd": { id: 6009, name: "INTEL CORPORATION" },
-  "ko_usd": { id: 6059, name: "COCA-COLA CO" },
-  "mcd_usd": { id: 6068, name: "MCDONALD'S CORP" },
-  "msft_usd": { id: 6001, name: "MICROSOFT CORP" },
-  "ibm_usd": { id: 6066, name: "IBM" },
-  "meta_usd": { id: 6006, name: "META PLATFORMS INC." },
-  "nvda_usd": { id: 6002, name: "NVIDIA CORP" },
-  "tsla_usd": { id: 6000, name: "TESLA INC" },
-  "aud_usd": { id: 5010, name: "AUSTRALIAN DOLLAR" },
-  "eur_usd": { id: 5000, name: "EURO" },
-  "gbp_usd": { id: 5002, name: "GREAT BRITAIN POUND" },
-  "nzd_usd": { id: 5013, name: "NEW ZEALAND DOLLAR" },
-  "usd_cad": { id: 5011, name: "CANADIAN DOLLAR" },
-  "usd_chf": { id: 5012, name: "SWISS FRANC" },
-  "usd_jpy": { id: 5001, name: "JAPANESE YEN" },
-  "xag_usd": { id: 5501, name: "SILVER" },
-  "xau_usd": { id: 5500, name: "GOLD" },
-  "btc_usdt": { id: 0, name: "BITCOIN" },
-  "eth_usdt": { id: 1, name: "ETHEREUM" },
-  "sol_usdt": { id: 10, name: "SOLANA" },
-  "xrp_usdt": { id: 14, name: "RIPPLE" },
-  "avax_usdt": { id: 5, name: "AVALANCHE" },
-  "doge_usdt": { id: 3, name: "DOGECOIN" },
-  "trx_usdt": { id: 15, name: "TRON" },
-  "ada_usdt": { id: 16, name: "CARDANO" },
-  "sui_usdt": { id: 90, name: "SUI" },
-  "link_usdt": { id: 2, name: "CHAINLINK" }
-};
-
-// WebSocket server avec compression
-const wss = new WebSocketServer({
-  port: PORT,
-  perMessageDeflate: {
-    zlibDeflateOptions: { level: 9 },
-    zlibInflateOptions: { chunkSize: 1024 },
-    clientNoContextTakeover: true,
-    serverNoContextTakeover: true,
-    threshold: 0
-  }
+const wss = new WebSocket.Server({ port: 8081 }, () => {
+  console.log('✅ wss1 lancé sur le port 8081');
 });
 
-console.log(`✅ Serveur WebSocket lancé sur le port ${PORT} avec compression et anti-inactivité.`);
+const clients = new Set();
+const agent = new https.Agent({ family: 4 }); // Force IPv4
+const PAIR = 'link_usdt';
+const API_URL = `https://prod-kline-rest.supra.com/latest?trading_pair=${PAIR}`;
 
-// Fonction pour récupérer et diffuser tous les prix
-async function fetchAllPricesAndBroadcast() {
-  try {
-    const responses = await Promise.all(PAIRS.map(pair =>
-      fetch(`${BASE_URL}/latest?trading_pair=${pair}`, {
-        headers: { 'x-api-key': API_KEY }
-      }).then(res => res.json().then(data => ({ pair, data })))
-    ));
-
-    const results = {};
-    for (const { pair, data } of responses) {
-      results[pair] = {
-        id: PAIR_METADATA[pair]?.id ?? null,
-        name: PAIR_METADATA[pair]?.name || "UNKNOWN",
-        ...data
-      };
-    }
-
-    const payload = JSON.stringify(results);
-
-    wss.clients.forEach(client => {
-      if (client.readyState === 1) {
-        client.send(payload);
-      }
-    });
-  } catch (err) {
-    console.error("❌ Erreur récupération prix:", err.message);
-  }
-}
-
-// Rafraîchissement toutes les 1,5 secondes
-setInterval(fetchAllPricesAndBroadcast, 1500);
-
-// Suivi d’inactivité pour chaque client
-wss.on('connection', ws => {
-  console.log("🟢 Nouveau client connecté");
-
-  let activityTimeout = setTimeout(() => {
-    ws.terminate();
-    console.log("🔴 Client déconnecté après 5 minutes d'inactivité");
-  }, 5 * 60 * 1000); // 5 minutes
-
-  ws.on('message', () => {
-    clearTimeout(activityTimeout);
-    activityTimeout = setTimeout(() => {
-      ws.terminate();
-      console.log("🔴 Client déconnecté après 5 minutes d'inactivité");
-    }, 5 * 60 * 1000);
-  });
+wss.on('connection', (ws) => {
+  console.log('✅ Client connecté à wss1');
+  clients.add(ws);
 
   ws.on('close', () => {
-    clearTimeout(activityTimeout);
+    clients.delete(ws);
+    console.log('❌ Client déconnecté');
   });
 });
+
+// Stream toutes les 2 secondes
+setInterval(async () => {
+  try {
+    const res = await fetch(API_URL, {
+      headers: { 'x-api-key': process.env.API_KEY },
+      agent
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error(`❌ HTTP ${res.status}: ${text}`);
+      return;
+    }
+
+    const json = await res.json();
+    const instrument = json.instruments?.[0];
+
+    if (instrument && instrument.currentPrice) {
+      const payload = {
+        pair: PAIR,
+        price: instrument.currentPrice,
+        timestamp: instrument.timestamp
+      };
+
+      for (const client of clients) {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(payload));
+        }
+      }
+
+      console.log(`📤 Diffusé: ${instrument.currentPrice}`);
+    }
+
+  } catch (err) {
+    console.error('❌ Erreur fetch:', err.message);
+  }
+}, 2000);
+

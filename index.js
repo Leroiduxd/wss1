@@ -42,7 +42,8 @@ app.get('/price', (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`);
+// ✅ Modification ici : écoute sur toutes les interfaces, pas juste localhost
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Serveur lancé sur http://0.0.0.0:${PORT}`);
 });
 
